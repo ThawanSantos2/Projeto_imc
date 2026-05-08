@@ -1,8 +1,14 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('form-cadastro');
-    const listaPessoas = document.getElementById('lista-pessoas');
+import { listarPessoas, cadastrarPessoa, removerPessoa } from './api/api.js';
 
-    form.addEventListener('submit', (e) => {
+document.addEventListener('DOMContentLoaded', async () => {
+    const form = document.getElementById('form-cadastro');
+    const listaPessoasUI = document.getElementById('lista-pessoas');
+
+    // Carregar dados iniciais da API
+    const pessoasIniciais = await listarPessoas();
+    pessoasIniciais.forEach(pessoa => adicionarPessoaNaLista(pessoa));
+
+    form.addEventListener('submit', async (e) => {
         e.preventDefault();
 
         // Captura de dados
@@ -17,22 +23,28 @@ document.addEventListener('DOMContentLoaded', () => {
         const imc = calcularIMC(peso, altura);
         const situacao = obterSituacaoIMC(imc);
 
-        // Criação do objeto pessoa
-        const pessoa = {
-            id: Date.now(),
+        // Objeto para a API
+        const novaPessoa = {
             nome,
             sexo,
             dataNascimento,
-            idade,
             peso,
             altura,
-            imc: imc.toFixed(2),
+            imc: parseFloat(imc.toFixed(2)),
             situacao: situacao.texto,
-            classeCSS: situacao.classe
+            classeCSS: situacao.classe,
+            idade // Opcional, o backend pode calcular
         };
 
-        adicionarPessoaNaLista(pessoa);
-        form.reset();
+        // Enviar para a API
+        const resultado = await cadastrarPessoa(novaPessoa);
+        
+        if (resultado) {
+            adicionarPessoaNaLista(resultado);
+            form.reset();
+        } else {
+            alert('Erro ao cadastrar na API. Verifique se o backend está rodando e o CORS está configurado.');
+        }
     });
 
     function calcularIdade(dataNasc) {
@@ -69,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="pessoa-info">
                 <div class="info-item"><strong>Nome:</strong> ${pessoa.nome}</div>
                 <div class="info-item"><strong>Sexo:</strong> ${pessoa.sexo}</div>
-                <div class="info-item"><strong>Idade:</strong> ${pessoa.idade} anos</div>
+                <div class="info-item"><strong>Idade:</strong> ${pessoa.idade || calcularIdade(pessoa.dataNascimento)} anos</div>
                 <div class="info-item"><strong>Peso:</strong> ${pessoa.peso} kg</div>
                 <div class="info-item"><strong>Altura:</strong> ${pessoa.altura} m</div>
                 <div class="info-item"><strong>IMC:</strong> ${pessoa.imc}</div>
@@ -78,15 +90,19 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn-remover">Excluir</button>
         `;
 
-        // RF04 - Remoção ao clicar sobre ela ou no botão de exclusão
-        li.addEventListener('click', (e) => {
-            if (e.target.classList.contains('btn-remover') || e.currentTarget === li) {
+        li.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('btn-remover')) {
                 if (confirm(`Deseja remover ${pessoa.nome}?`)) {
-                    li.remove();
+                    const sucesso = await removerPessoa(pessoa.id);
+                    if (sucesso) {
+                        li.remove();
+                    } else {
+                        alert('Erro ao remover da API.');
+                    }
                 }
             }
         });
 
-        listaPessoas.appendChild(li);
+        listaPessoasUI.appendChild(li);
     }
 });
