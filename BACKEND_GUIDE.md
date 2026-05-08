@@ -1,25 +1,34 @@
-# Guia de Implementação do Backend (C# .NET Core API)
+# Guia Completo: Backend API WEB ASP.NET Core + SQL Server
 
-Este guia descreve como configurar a API para o Projeto IMC utilizando o Visual Studio 2022.
+Este guia foca no modelo **API WEB do ASP.NET Core** (com Controllers) utilizando o **Visual Studio 2022**.
 
-## 1. Criação do Projeto
-1. Abra o **Visual Studio 2022**.
-2. Clique em **Criar um novo projeto**.
-3. Selecione **ASP.NET Core Web API** e clique em **Próximo**.
-4. Nome do Projeto: `ProjetoImc.Api`.
-5. Framework: **.NET 6.0** ou **.NET 8.0**.
-6. Desmarque "Usar controladores (desmarque para usar APIs mínimas)" se preferir o modelo clássico de Controllers (recomendado para iniciantes).
+## 1. Banco de Dados (SQL Server)
+1. Abra o **SQL Server Management Studio (SSMS)**.
+2. Execute o script contido no arquivo `database.sql` para criar o banco `ProjetoImcDB` e a tabela `Pessoas`.
 
-## 2. Configuração de Pacotes NuGet
-No Console do Gerenciador de Pacotes, instale:
+## 2. Criação do Projeto no Visual Studio 2022
+1. **Criar um novo projeto** -> **API WEB do ASP.NET Core**.
+2. Nome: `ProjetoImc.Api`.
+3. Framework: **.NET 6.0** ou **.NET 8.0**.
+4. **IMPORTANTE**: Certifique-se de que a opção "Usar controladores" está **marcada**.
+
+## 3. Configuração do Banco de Dados (Entity Framework)
+Instale os pacotes via Console do Gerenciador de Pacotes:
 ```powershell
 Install-Package Microsoft.EntityFrameworkCore.SqlServer
+Install-Package Microsoft.EntityFrameworkCore.Design
 Install-Package Microsoft.EntityFrameworkCore.Tools
-Install-Package Swashbuckle.AspNetCore
 ```
 
-## 3. Modelo de Dados (Model)
-Crie uma pasta `Models` e adicione a classe `Pessoa.cs`:
+No arquivo `appsettings.json`, adicione sua string de conexão:
+```json
+"ConnectionStrings": {
+  "DefaultConnection": "Server=SEU_SERVIDOR;Database=ProjetoImcDB;Trusted_Connection=True;TrustServerCertificate=True;"
+}
+```
+
+## 4. Model e Contexto
+Crie a classe `Pessoa.cs` na pasta `Models`:
 ```csharp
 public class Pessoa
 {
@@ -27,68 +36,67 @@ public class Pessoa
     public string Nome { get; set; }
     public string Sexo { get; set; }
     public DateTime DataNascimento { get; set; }
-    public double Peso { get; set; }
-    public double Altura { get; set; }
-    public double Imc { get; set; }
+    public decimal Peso { get; set; }
+    public decimal Altura { get; set; }
+    public decimal Imc { get; set; }
     public string Situacao { get; set; }
 }
 ```
 
-## 4. Configuração do CORS (Importante!)
-Para que o seu frontend consiga acessar a API, você deve configurar o CORS no `Program.cs`:
+Crie o arquivo `AppDbContext.cs` na pasta `Data`:
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+using Microsoft.EntityFrameworkCore;
+using ProjetoImc.Api.Models;
 
-builder.Services.AddCors(options =>
+public class AppDbContext : DbContext
 {
-    options.AddPolicy("AllowAll",
-        builder =>
-        {
-            builder.AllowAnyOrigin()
-                   .AllowAnyMethod()
-                   .AllowAnyHeader();
-        });
-});
-
-// ... resto do código
-
-var app = builder.Build();
-
-app.UseCors("AllowAll"); // Deve vir antes de UseAuthorization
-
-// ... resto do código
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+    public DbSet<Pessoa> Pessoas { get; set; }
+}
 ```
 
-## 5. Controller
-Crie um `PessoaController.cs` na pasta `Controllers`:
+## 5. Registro do Contexto e CORS (Program.cs)
+```csharp
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+builder.Services.AddCors(options => {
+    options.AddPolicy("AllowAll", b => b.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+
+var app = builder.Build();
+app.UseCors("AllowAll");
+```
+
+## 6. Controller (PessoaController.cs)
+Crie o Controller com as ações de CRUD para interagir com o banco de dados:
 ```csharp
 [ApiController]
 [Route("api/[controller]")]
 public class PessoaController : ControllerBase
 {
-    private static List<Pessoa> _pessoas = new List<Pessoa>();
+    private readonly AppDbContext _context;
+    public PessoaController(AppDbContext context) { _context = context; }
 
     [HttpGet]
-    public IActionResult Get() => Ok(_pessoas);
+    public async Task<ActionResult<IEnumerable<Pessoa>>> Get() => await _context.Pessoas.ToListAsync();
 
     [HttpPost]
-    public IActionResult Post([FromBody] Pessoa pessoa)
+    public async Task<ActionResult<Pessoa>> Post(Pessoa pessoa)
     {
-        pessoa.Id = _pessoas.Count + 1;
-        _pessoas.Add(pessoa);
+        _context.Pessoas.Add(pessoa);
+        await _context.SaveChangesAsync();
         return Ok(pessoa);
     }
 
     [HttpDelete("{id}")]
-    public IActionResult Delete(int id)
+    public async Task<IActionResult> Delete(int id)
     {
-        var pessoa = _pessoas.FirstOrDefault(p => p.Id == id);
+        var pessoa = await _context.Pessoas.FindAsync(id);
         if (pessoa == null) return NotFound();
-        _pessoas.Remove(pessoa);
+        _context.Pessoas.Remove(pessoa);
+        await _context.SaveChangesAsync();
         return NoContent();
     }
 }
 ```
-
-## 6. Conexão com o Frontend
-O arquivo `js/api/api.js` já está configurado para apontar para `https://localhost:7041/api`. Verifique a porta em que seu projeto .NET está rodando no arquivo `launchSettings.json`.
